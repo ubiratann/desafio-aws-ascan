@@ -10,7 +10,7 @@ resource "aws_apigatewayv2_stage" "stage" {
 }
 
 resource "aws_apigatewayv2_integration" "integration" {
-  api_id                 = aws_apigatewayv2_api.this.id
+  api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
   integration_method     = "POST"
   integration_uri        = aws_lambda_function.lambda.invoke_arn
@@ -38,7 +38,7 @@ resource "aws_apigatewayv2_route" "put" {
 
 
 resource "aws_apigatewayv2_route" "get" {
-  api_id    = aws_apigatewayv2_api.this.id
+  api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /v1/todos/{id}"
   target    = "integrations/${aws_apigatewayv2_integration.integration.id}"
 }

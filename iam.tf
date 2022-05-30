@@ -14,9 +14,28 @@ resource "aws_iam_role" "api_role" {
 }
 
 data "aws_iam_policy_document" "dynamo_policys" {
+
+  statement {
+    sid       = "AllowCreatingLogGroups"
+    effect    = "Allow"
+    resources = ["arn:aws:logs:*:*:*"]
+    actions   = ["logs:CreateLogGroup"]
+  }
+
+  statement {
+    sid       = "AllowWritingLogs"
+    effect    = "Allow"
+    resources = ["arn:aws:logs:*:*:log-group:/aws/lambda/*:*"]
+
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+  }
+
   statement {
     effect    = "Allow"
-    resources = ["arn:aws:dyanmodb:${var.region}:*:table/todo-list"]
+    resources = ["arn:aws:dynamodb:${var.region}:*:table/todo-list"]
     actions = [
       "dynamodb:PutItem",
       "dynamodb:DescribeTable",
@@ -31,16 +50,20 @@ data "aws_iam_policy_document" "dynamo_policys" {
   statement {
     effect    = "Allow"
     resources = ["*"]
-    actions   = ["dynamodbListTables"]
+    actions = [
+      "dynamodb:ListTables",
+      "ssm:DescribeParameters",
+      "xray:PutTraceSegments"
+    ]
   }
 }
 
-resource "aws_iam_policy" "policy" {
+resource "aws_iam_policy" "iam_policy" {
   name   = "todo-list-policy"
   policy = data.aws_iam_policy_document.dynamo_policys.json
 }
 
 resource "aws_iam_role_policy_attachment" "attachment" {
-  policy_arn = aws_iam_policy.policy.arn
+  policy_arn = aws_iam_policy.iam_policy.arn
   role       = aws_iam_role.api_role.name
 }

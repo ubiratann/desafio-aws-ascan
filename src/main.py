@@ -1,7 +1,7 @@
 import boto3
 import json
 import os
-
+from http import HTTPStatus
 DEFAULT_TABLE_NAME = os.environ['TABLE']
 
 TODO        = 1
@@ -30,11 +30,11 @@ def handler(event, context):
         response = {}
         try:
             table.put_item(**item)
-            response["status"] = 200
+            response["status"] = HTTPStatus.CREATED
             response["body"]   = "Item created with sucess"
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong"
         return response
 
@@ -59,11 +59,11 @@ def handler(event, context):
             ExpressionAttributeValues = {':d': item["description"] },
             ReturnValues              = "UPDATED_NEW"
             )
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             response["body"]   = "Item description updated with sucess"
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
 
@@ -87,11 +87,11 @@ def handler(event, context):
             ExpressionAttributeValues = {':s': status},
             ReturnValues              = "UPDATED_NEW"
             )
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             response["body"]   = "Status updated with sucess!"
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
     def delete_task(id, table):
@@ -107,11 +107,11 @@ def handler(event, context):
         response = {}
         try:
             table.delete_item(Key = {"id":id})
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             response["body"]   = "Status updated with sucess!"
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
     
@@ -127,14 +127,14 @@ def handler(event, context):
         """
         response = {}
         try:
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             if id != "":
                 response["body"] = table.get_item(Key = {"id":id})
             else:
                 response = get_all_tasks(dynamo)
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
 
@@ -150,11 +150,11 @@ def handler(event, context):
         """
         response = {}
         try:
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             response["body"]   = table.query(KeyConditionExpression = Key("status").eq(status))
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
 
@@ -168,11 +168,11 @@ def handler(event, context):
         """
         response = {}
         try:
-            response["status"] = 200
+            response["status"] = HTTPStatus.OK
             response["body"]   = table.scan()
         except Exception as err:
             print(err)
-            response["status"] = 500
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
 
@@ -247,7 +247,7 @@ def handler(event, context):
         }
     else:
         return {
-            "status": response[400],
+            "status": HTTPStatus.BAD_REQUEST,
             "body": json.dumps({"body":"Bad request!"}),
             "headers": {
                 "Content-Type": "application/json"

@@ -8,6 +8,9 @@ TODO        = 1
 IN_PROGRESS = 2
 COMPLETE    = 3
 
+ID_INDEX       = -1
+FUNCTION_INDEX = -2
+
 def handler(event, context):
     """
         This method will be called on the invok action of the AWS lambda function 
@@ -23,8 +26,9 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
+
         return table.put_item(item)
-    
+
     def update_task_description(id, item, table):
         """
             Update the description of a task
@@ -86,8 +90,11 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.get_item(Key = {"id":id})
-    
+        if id != "":
+            return table.get_item(Key = {"id":id})
+        else:
+            return get_all_tasks(dynamo)
+
     def get_tasks_by_status(status, table):
         """
             Get all tasks that have an especific status
@@ -114,34 +121,67 @@ def handler(event, context):
     dynamo = boto3.resource("dynamodb").Table(DEFAULT_TABLE_NAME)
     #values from request context
     method = event["requestContext"]["http"]["method"]
-    path   = event["requestContext"]["path"].split("/")[-2]
+    splited_path   = event["requestContext"]["path"].split("/")
     #parsed values from context
     body   = json.loads(event["body"] if "body" in event  else None)
     params = json.loads(event["queryStringParameters"] if "queryStringParameters" in event else None)
     
 
-    METHODS = {
-        "PUT": {
-            "start": {
-                "function": update_task_status,
-                "values": (params["id"], IN_PROGRESS, dynamo)
-            },
-            "stop": {
-                "function": update_task_status,
-                "values": (params["id"], TODO, dynamo)
-            },
-            "finish": {
-                "function": update_task_status,
-                "values": (params["id"], COMPLETE, dynamo)
-            },
-            "update": {
-                "function": update_task_description,
-                "values": (params["id"], body, dynamo)
-            }
-        },
-        "POST": {
+    METHODS = ["GET","DELETE","POST","PUT"]
 
+    GET_FUNCTIONS = {
+        "get": {
+            "function": get_task,
+            "values": (params["id"], dynamo)
+        },
+        "status":{
+            "function": get_tasks_by_status,
+            "values": (params["id"], dynamo)
         }
     }
 
-  
+    PUT_FUNCTIONS = {
+        "start": {
+            "function": update_task_status,
+            "values": (params["id"], IN_PROGRESS, dynamo)
+        },
+        "stop": {
+            "function": update_task_status,
+            "values": (params["id"], TODO, dynamo)
+        },
+        "finish": {
+            "function": update_task_status,
+            "values": (params["id"], COMPLETE, dynamo)
+        },
+        "update": {
+            "function": update_task_description,
+            "values": (params["id"], body, dynamo)
+        }
+    }
+
+    if method in METHODS:
+        response = None 
+        if method == "DELETE":
+            response = delete_task(params["id"], dynamo)
+
+        if method == "GET":
+            func = splited_path[FUNCTION_INDEX]
+            if  func in GET_FUNCTIONS:
+                response = GET_FUNCTIONS[func]["function"](GET_FUNCTIONS[func]["values"])
+            else:
+                response = GET_FUNCTIONS["get"]["function"](GET_FUNCTIONS["get"]["values"])
+
+        if method == "POST":
+            response = create_task(body, dynamo)
+
+        if method == "PUT":
+            func = splited_path[FUNCTION_INDEX]
+            response = PUT_FUNCTIONS[func]["function"](PUT_FUNCTIONS[func]["values"])
+
+        return {
+            "status": status,
+            "body": json.dumps(response),
+            "headers": {
+                "Content-Type": "application/json"
+            }
+        }

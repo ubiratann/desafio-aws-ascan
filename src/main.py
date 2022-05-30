@@ -16,6 +16,7 @@ def handler(event, context):
         This method will be called on the invok action of the AWS lambda function 
     """
 
+
     def create_task(item, table):
         """
             Create a task on default database table
@@ -26,8 +27,16 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-
-        return table.put_item(item)
+        response = {}
+        try:
+            table.put_item(**item)
+            response["status"] = 200
+            response["body"]   = "Item created with sucess"
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong"
+        return response
 
     def update_task_description(id, item, table):
         """
@@ -41,13 +50,22 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.update_item(
+        response = {}
+        try:
+            table.update_item(
             
             Key                       = {"id": id},
             UpdateExpression          = "set info.description=:d",
             ExpressionAttributeValues = {':d': item["description"] },
             ReturnValues              = "UPDATED_NEW"
-        )
+            )
+            response["status"] = 200
+            response["body"]   = "Item description updated with sucess"
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
 
     def update_task_status(id, status, table):
         """
@@ -61,13 +79,21 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.update_item(
+        response = {}
+        try:
+            table.update_item(
             Key                       = {"id": id},
             UpdateExpression          = "set info.status=:s",
             ExpressionAttributeValues = {':s': status},
             ReturnValues              = "UPDATED_NEW"
-        )
-
+            )
+            response["status"] = 200
+            response["body"]   = "Status updated with sucess!"
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
     def delete_task(id, table):
         """
             Delete a task
@@ -78,7 +104,16 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.delete_item(Key = {"id":id})
+        response = {}
+        try:
+            table.delete_item(Key = {"id":id})
+            response["status"] = 200
+            response["body"]   = "Status updated with sucess!"
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
     
     def get_task(id, table):
         """
@@ -90,10 +125,18 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        if id != "":
-            return table.get_item(Key = {"id":id})
-        else:
-            return get_all_tasks(dynamo)
+        response = {}
+        try:
+            response["status"] = 200
+            if id != "":
+                response["body"] = table.get_item(Key = {"id":id})
+            else:
+                response = get_all_tasks(dynamo)
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
 
     def get_tasks_by_status(status, table):
         """
@@ -105,7 +148,15 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.query(KeyConditionExpression = Key("status").eq(status))
+        response = {}
+        try:
+            response["status"] = 200
+            response["body"]   = table.query(KeyConditionExpression = Key("status").eq(status))
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
 
     def get_all_tasks(table):
         """
@@ -115,18 +166,27 @@ def handler(event, context):
             table : object
                 Reference to the default database table
         """
-        return table.scan()
+        response = {}
+        try:
+            response["status"] = 200
+            response["body"]   = table.scan()
+        except Exception as err:
+            print(err)
+            response["status"] = 500
+            response["body"]   = "Something went wrong!"
+        return response
 
     #dynamo reference
     dynamo = boto3.resource("dynamodb").Table(DEFAULT_TABLE_NAME)
+    
     #values from request context
     method = event["requestContext"]["http"]["method"]
     splited_path   = event["requestContext"]["path"].split("/")
+   
     #parsed values from context
     body   = json.loads(event["body"] if "body" in event  else None)
     params = json.loads(event["queryStringParameters"] if "queryStringParameters" in event else None)
     
-
     METHODS = ["GET","DELETE","POST","PUT"]
 
     GET_FUNCTIONS = {
@@ -179,8 +239,16 @@ def handler(event, context):
             response = PUT_FUNCTIONS[func]["function"](PUT_FUNCTIONS[func]["values"])
 
         return {
-            "status": status,
-            "body": json.dumps(response),
+            "status": response["status"],
+            "body": json.dumps(response["body"]),
+            "headers": {
+                "Content-Type": "application/json"
+            }
+        }
+    else:
+        return {
+            "status": response[400],
+            "body": json.dumps({"body":"Bad request!"}),
             "headers": {
                 "Content-Type": "application/json"
             }

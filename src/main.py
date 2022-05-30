@@ -1,6 +1,3 @@
-from logging import Logger
-from multiprocessing.connection import Client
-from pydoc import doc
 import boto3
 import json
 import os

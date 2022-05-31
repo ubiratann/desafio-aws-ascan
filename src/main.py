@@ -2,6 +2,7 @@ import boto3
 import json
 import os
 from http import HTTPStatus
+
 DEFAULT_TABLE_NAME = os.environ['TABLE']
 
 TODO        = 1
@@ -29,11 +30,13 @@ def handler(event, context):
         """
         response = {}
         try:
-            table.put_item(**item)
+            table.put_item(
+                TableName = DEFAULT_TABLE_NAME,
+                Item      = {**item}
+            )
             response["status"] = HTTPStatus.CREATED
             response["body"]   = "Item created with sucess"
-        except Exception as err:
-            print(err)
+        except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong"
         return response
@@ -53,16 +56,15 @@ def handler(event, context):
         response = {}
         try:
             table.update_item(
-            
-            Key                       = {"id": id},
-            UpdateExpression          = "set info.description=:d",
-            ExpressionAttributeValues = {':d': item["description"] },
-            ReturnValues              = "UPDATED_NEW"
+                TableName                 = DEFAULT_TABLE_NAME,
+                Key                       = {"id": id},
+                UpdateExpression          = "set info.description=:d",
+                ExpressionAttributeValues = {':d': item["description"] },
+                ReturnValues              = "UPDATED_NEW"
             )
             response["status"] = HTTPStatus.OK
             response["body"]   = "Item description updated with sucess"
-        except Exception as err:
-            print(err)
+        except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
@@ -82,15 +84,15 @@ def handler(event, context):
         response = {}
         try:
             table.update_item(
-            Key                       = {"id": id},
-            UpdateExpression          = "set info.status=:s",
-            ExpressionAttributeValues = {':s': status},
-            ReturnValues              = "UPDATED_NEW"
+                TableName                 = DEFAULT_TABLE_NAME,
+                Key                       = {"id": id},
+                UpdateExpression          = "SET info.status_code=:s",
+                ExpressionAttributeValues = {':s': status},
+                ReturnValues              = "UPDATED_NEW"
             )
             response["status"] = HTTPStatus.OK
             response["body"]   = "Status updated with sucess!"
-        except Exception as err:
-            print(err)
+        except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
@@ -108,8 +110,8 @@ def handler(event, context):
         try:
             table.delete_item(Key = {"id":id})
             response["status"] = HTTPStatus.OK
-            response["body"]   = "Status updated with sucess!"
-        except Exception as err:
+            response["body"]   = "Item deleted with sucess!"
+        except:
             print(err)
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
@@ -126,16 +128,20 @@ def handler(event, context):
                 Reference to the default database table
         """
         response = {}
-        try:
-            response["status"] = HTTPStatus.OK
-            if id != "":
-                response["body"] = table.get_item(Key = {"id":id})
-            else:
-                response = get_all_tasks(dynamo)
-        except Exception as err:
-            print(err)
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = "Something went wrong!"
+        if id != "":
+            try:
+                response["status"] = HTTPStatus.OK
+                aux = table.get_item(TableName=DEFAULT_TABLE_NAME, Key={"id":id})
+                response["body"] = aux["Item"]
+            except KeyError:
+            ## Handling the case where not item was found so the "Item" key dont exists in the aux object 
+                response["status"] = HTTPStatus.NOT_FOUND
+                response["body"]   = "No items with the passed id were found."                 
+            except:
+                response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+                response["body"]   = "Something went wrong!" 
+        else:
+            response = get_all_tasks(dynamo)
         return response
 
     def get_tasks_by_status(status, table):
@@ -151,9 +157,16 @@ def handler(event, context):
         response = {}
         try:
             response["status"] = HTTPStatus.OK
-            response["body"]   = table.query(KeyConditionExpression = Key("status").eq(status))
-        except Exception as err:
-            print(err)
+            aux                = table.query(
+                TableName              = DEFAULT_TABLE_NAME,
+                KeyConditionExpression = Key("status").eq(status)
+            )
+            response["body"] = aux["Items"]
+        except KeyError:
+            ## Handling the case where not item was found so the "Item" key dont exists in the aux object 
+                response["status"] = HTTPStatus.NOT_FOUND
+                response["body"]   = "No items with the passed id were found."  
+        except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
         return response
@@ -169,8 +182,9 @@ def handler(event, context):
         response = {}
         try:
             response["status"] = HTTPStatus.OK
-            response["body"]   = table.scan()
-        except Exception as err:
+            aux                = table.scan(TableName = DEFAULT_TABLE_NAME,)
+            response["body"]   = aux["Items"]   
+        except:
             print(err)
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = "Something went wrong!"
@@ -185,75 +199,75 @@ def handler(event, context):
     print(event)
 
     #parsed values from context
-    body   = event["body"] if "body" in event  else {}
+    body   = json.loads(event["body"]) if "body" in event  else {}
     params = event["pathParameters"] if "pathParameters" in event else {}
     
     #default route params
-    id   = params["id"] if "id" in params else ""
-    code = params["code"] if "code" in params else ""
+    id   = int(params["id"]) if "id" in params else ""
+    code = int(params["code"]) if "code" in params else ""
     
     METHODS = ["GET","DELETE","POST","PUT"]
 
     GET_FUNCTIONS = {
         "get": {
             "function": get_task,
-            "values": (id, dynamo)
+            "values": id
         },
         "status":{
             "function": get_tasks_by_status,
-            "values": (code, dynamo)
+            "values": code
         }
     }
 
     PUT_FUNCTIONS = {
         "start": {
             "function": update_task_status,
-            "values": (id, IN_PROGRESS, dynamo)
+            "values": (id, IN_PROGRESS)
         },
         "stop": {
             "function": update_task_status,
-            "values": (params["id"], TODO, dynamo)
+            "values": (id, TODO)
         },
         "finish": {
             "function": update_task_status,
-            "values": (params["id"], COMPLETE, dynamo)
+            "values": (id, COMPLETE)
         },
         "update": {
             "function": update_task_description,
-            "values": (params["id"], body, dynamo)
+            "values": (code, body)
         }
     }
 
     if method in METHODS:
         response = None 
         if method == "DELETE":
-            response = delete_task(params["id"], dynamo)
+            response = delete_task(id, dynamo)
 
         if method == "GET":
             func = splited_path[FUNCTION_INDEX]
             if  func in GET_FUNCTIONS:
-                response = GET_FUNCTIONS[func]["function"](GET_FUNCTIONS[func]["values"])
+                response = GET_FUNCTIONS[func]["function"](GET_FUNCTIONS[func]["values"], dynamo)
             else:
-                response = GET_FUNCTIONS["get"]["function"](GET_FUNCTIONS["get"]["values"])
+                response = GET_FUNCTIONS["get"]["function"](GET_FUNCTIONS["get"]["values"], dynamo)
 
         if method == "POST":
             response = create_task(body, dynamo)
 
         if method == "PUT":
             func     = splited_path[FUNCTION_INDEX]
-            response = PUT_FUNCTIONS[func]["function"](PUT_FUNCTIONS[func]["values"])
+            response = PUT_FUNCTIONS[func]["function"](*PUT_FUNCTIONS[func]["values"], dynamo)
 
         return {
-            "status": response["status"],
-            "body": json.dumps(response["body"]),
+            "statusCode": response["status"],
+            "body": response["body"],
             "headers": {
                 "Content-Type": "application/json"
             }
         }
     else:
         return {
-            "status": HTTPStatus.BAD_REQUEST,
-            "body": json.dumps({"body":"Bad request!"}),
+            "statusCode": HTTPStatus.BAD_REQUEST,
+            "body": {"message":"Bad request!"},
             "headers": {
                 "Content-Type": "application/json"
             }

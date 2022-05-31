@@ -180,30 +180,35 @@ def handler(event, context):
     dynamo = boto3.resource("dynamodb").Table(DEFAULT_TABLE_NAME)
     
     #values from request context
-    method = event["requestContext"]["http"]["method"]
-    splited_path   = event["requestContext"]["path"].split("/")
-   
+    method       = event["requestContext"]["http"]["method"]
+    splited_path = event["rawPath"].split("/")
+    print(event)
+
     #parsed values from context
-    body   = json.loads(event["body"] if "body" in event  else None)
-    params = json.loads(event["queryStringParameters"] if "queryStringParameters" in event else None)
+    body   = event["body"] if "body" in event  else {}
+    params = event["pathParameters"] if "pathParameters" in event else {}
+    
+    #default route params
+    id   = params["id"] if "id" in params else ""
+    code = params["code"] if "code" in params else ""
     
     METHODS = ["GET","DELETE","POST","PUT"]
 
     GET_FUNCTIONS = {
         "get": {
             "function": get_task,
-            "values": (params["id"], dynamo)
+            "values": (id, dynamo)
         },
         "status":{
             "function": get_tasks_by_status,
-            "values": (params["id"], dynamo)
+            "values": (code, dynamo)
         }
     }
 
     PUT_FUNCTIONS = {
         "start": {
             "function": update_task_status,
-            "values": (params["id"], IN_PROGRESS, dynamo)
+            "values": (id, IN_PROGRESS, dynamo)
         },
         "stop": {
             "function": update_task_status,
@@ -235,7 +240,7 @@ def handler(event, context):
             response = create_task(body, dynamo)
 
         if method == "PUT":
-            func = splited_path[FUNCTION_INDEX]
+            func     = splited_path[FUNCTION_INDEX]
             response = PUT_FUNCTIONS[func]["function"](PUT_FUNCTIONS[func]["values"])
 
         return {

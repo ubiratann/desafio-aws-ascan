@@ -1,8 +1,15 @@
 # Criando lambda
+
+data "archive_file" "artifact" {
+  output_path = "files/lambda.zip"
+  type        = "zip"
+  source_file = "src/main.py"
+}
+
 resource "aws_lambda_function" "lambda" {
 
-  filename      = "lambda.zip"
-  function_name = "todo-list-lambda"
+  filename      = data.archive_file.artifact.output_path
+  function_name = "todo-list"
   handler       = "main.handler"
   runtime       = "python3.8"
   role          = aws_iam_role.api_role.arn

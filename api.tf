@@ -64,3 +64,9 @@ resource "aws_apigatewayv2_route" "get_by_status" {
   route_key = "GET /v1/todo/status/{code}"
   target    = "integrations/${aws_apigatewayv2_integration.integration.id}"
 }
+
+resource "aws_apigatewayv2_route" "get_all" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /v1/todo"
+  target    = "integrations/${aws_apigatewayv2_integration.integration.id}"
+}

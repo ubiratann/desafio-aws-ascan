@@ -34,8 +34,11 @@ data "aws_iam_policy_document" "dynamo_policys" {
   }
 
   statement {
-    effect    = "Allow"
-    resources = ["arn:aws:dynamodb:${var.region}:*:table/todo-list"]
+    effect = "Allow"
+    resources = [
+      "arn:aws:dynamodb:${var.region}:*:table/todo-list",
+      "arn:aws:dynamodb:${var.region}:*:table/todo-list/index/*"
+    ]
     actions = [
       "dynamodb:PutItem",
       "dynamodb:DescribeTable",

@@ -7,11 +7,12 @@ from botocore.exceptions import ClientError
 from http import HTTPStatus
 from decimal import Decimal
 
+
 DEFAULT_TABLE_NAME = os.environ['TABLE']
 
 TODO        = 1
 IN_PROGRESS = 2
-COMPLETE    = 3
+DONE        = 3
 
 ID_INDEX       = -1
 FUNCTION_INDEX = -2
@@ -33,8 +34,11 @@ def handler(event, context):
                 object with the body of response
         """
         for item in body:
+            # recursively parsing nested dicts
+            if isinstance(item, dict):
+                item = parse_body(item);
             #parsing Decimal objects to int
-            if isinstance(body[item], Decimal):
+            elif isinstance(body[item], Decimal):
                 body[item] = int(body[item])  
         return body
 
@@ -88,7 +92,6 @@ def handler(event, context):
                 ExpressionAttributeValues = { ":description" : item["description"] },
                 ReturnValues              = "UPDATED_NEW"
             )
-            print(aux)
             response["status"] = HTTPStatus.OK
             response["body"]   = {"message" : "Item description updated with sucess !"}
         except ClientError as err:
@@ -107,23 +110,27 @@ def handler(event, context):
             ----------
             id : int
                 Id of the task to be updated
-            status : int
+            status_code : int
                 The new status code
             table : object
                 Reference to the default database table
         """
         response = {}
+        messages = {
+            IN_PROGRESS : "The task is in progress !",
+            TODO        : "The task has been stoped !",
+            DONE        : "The task has ben completed !"
+        }
         try:
             table.update_item(
                 TableName                 = DEFAULT_TABLE_NAME,
                 Key                       = {"id": id},
-                UpdateExpression          = "SET status_code=:s",
+                UpdateExpression          = "SET status_code=:status_code",
                 ExpressionAttributeValues = {':status_code': status_code},
                 ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
-                ReturnValues              = "UPDATED_NEW"
             )
+            response["body"]   = {"message" : messages[status_code]}
             response["status"] = HTTPStatus.OK
-            response["body"]   = {"message" : "Status updated with sucess !"}
         except ClientError as err:
             if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
                 response["status"] = HTTPStatus.NOT_FOUND
@@ -175,14 +182,15 @@ def handler(event, context):
                 aux = table.get_item(
                     TableName = DEFAULT_TABLE_NAME,
                     Key       = {"id":id},
-                    ConditionExpression = Attr("id").exists()
                 )
                 response["status"] = HTTPStatus.OK
-                response["body"]   = aux["Item"]
+                response["body"]   = aux["Item"] 
+            except KeyError as err:
+                response["status"] = HTTPStatus.NOT_FOUND
+                response["body"]   = { "message" : f"Theres no item with id={id}"}
             except ClientError as err:
-                if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-                    response["status"] = HTTPStatus.NOT_FOUND
-                    response["body"]   = {"message" : f"No items with id={id} were found."}                
+                response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+                response["body"]   = { "message" : err.response['Error']['Message']}         
             except:
                 response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
                 response["body"]   = {"message" : "Something went wrong :'("}
@@ -195,26 +203,26 @@ def handler(event, context):
             Get all tasks that have an especific status
             Parameters
             ----------
-            status : int
+            status_code : int
                 Wanted status code of the tasks
             table : object
                 Reference to the default database table
         """
         response = {}
-        # try:
-        aux = table.query(
-            TableName              = DEFAULT_TABLE_NAME,
-            KeyConditionExpression = Key("status_code").eq(status_code)
-        )
-        response["status"] = HTTPStatus.OK
-        response["body"]   = aux["Items"]
-        # except ClientError as err:
-            # if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-            #     response["status"] = HTTPStatus.NOT_FOUND
-            #     response["body"]   = {"message" : f"No items with id={id} were found."}      
-        # except:
-            # response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            # response["body"]   = {"message" : "Something went wrong :'("}
+        try:
+            aux = table.query(
+                TableName              = DEFAULT_TABLE_NAME,
+                IndexName              = "status_code_index",
+                KeyConditionExpression = Key("status_code").eq(status_code)
+            )
+            response["status"] = HTTPStatus.OK
+            response["body"]   = aux["Items"]
+        except ClientError as err:
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+            response["body"]   = { "message" : err.response['Error']['Message']}         
+        except:
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+            response["body"]   = {"message" : "Something went wrong :'("}
         return response
 
     def get_all_tasks(table):
@@ -230,6 +238,9 @@ def handler(event, context):
             aux                = table.scan(TableName = DEFAULT_TABLE_NAME,)
             response["status"] = HTTPStatus.OK
             response["body"]   = aux["Items"]   
+        except ClientError as err:
+            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+            response["body"]   = { "message" : err.response['Error']['Message']}      
         except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = {"message" : "Something went wrong :'("}
@@ -241,7 +252,6 @@ def handler(event, context):
     #values from request context
     method       = event["requestContext"]["http"]["method"]
     splited_path = event["rawPath"].split("/")
-    print(event)
 
     #parsed values from context
     body   = json.loads(event["body"]) if "body" in event  else {}
@@ -275,7 +285,7 @@ def handler(event, context):
         },
         "finish": {
             "function": update_task_status,
-            "values": (id, COMPLETE)
+            "values": (id, DONE)
         },
         "update": {
             "function": update_task_description,

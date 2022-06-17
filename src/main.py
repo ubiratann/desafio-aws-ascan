@@ -2,6 +2,7 @@ import boto3
 import os
 import json
 import uuid
+from datetime import datetime
 
 from boto3.dynamodb.conditions import Attr, And, Key
 from botocore.exceptions import ClientError
@@ -19,6 +20,9 @@ ID_INDEX       = -1
 FUNCTION_INDEX = -2
 
 CONDITIONAL_EXCEPTION = "ConditionalCheckFailedException"
+
+def now():
+    return datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
 
 def parse_body(body):
     """
@@ -51,7 +55,9 @@ def create_task(item, table):
         table : object
             Reference to the default database table
     """
-    item["id"] = uuid.uuid4().int & (1<<64)-1
+    item["id"]         = uuid.uuid4().int & (1<<64)-1
+    item["status_code"]     = TODO
+    item["created_at"] = now()
     response = {}
     try:
         table.put_item(
@@ -61,7 +67,7 @@ def create_task(item, table):
         )
         response["status"] = HTTPStatus.CREATED
         response["body"] =  {
-                               "message": "deu bom",
+                               "message": "Task created with success!",
                                "item": item
                             }
     except ClientError as err:
@@ -91,13 +97,15 @@ def update_task_description(id, item, table):
             TableName                 = DEFAULT_TABLE_NAME,
             Key                       = {"id": id},
             ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
-            UpdateExpression          = "SET description = :description",
-            ExpressionAttributeValues = { ":description" : item["description"] },
+            UpdateExpression          = "SET description =:description, updated_at =:updated_at",
+            ExpressionAttributeValues = { 
+                                            ":description" : item["description"],
+                                            ":updated_at"  : now() },
             ReturnValues              = "UPDATED_NEW"
         )
         response["status"] = HTTPStatus.OK
         response["body"]   = {
-                                "message" : "Item description updated with sucess !",
+                                "message" : "Task description updated with sucess !",
                                 "item"    :  aux["Attributes"]
                              }
     except ClientError as err:
@@ -123,16 +131,19 @@ def update_task_status(id, status_code, table):
     """
     response = {}
     messages = {
-        IN_PROGRESS : "The task is in progress !",
-        TODO        : "The task has been stoped !",
-        DONE        : "The task has ben completed !"
+        IN_PROGRESS : "Now the task is in in progress!",
+        TODO        : "Now the task is stoped!",
+        DONE        : "Now the task is done!"
     }
     try:
         item = table.update_item(
             TableName                 = DEFAULT_TABLE_NAME,
             Key                       = {"id": id},
-            UpdateExpression          = "SET status_code=:status_code",
-            ExpressionAttributeValues = {':status_code': status_code},
+            UpdateExpression          = "SET status_code=:status_code, updated_at =:updated_at",
+            ExpressionAttributeValues = {
+                                           ":status_code": status_code,
+                                           ":updated_at" : now()
+                                        },
             ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
             ReturnValues              = "ALL_NEW"
         )

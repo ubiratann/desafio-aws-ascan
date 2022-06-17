@@ -11,6 +11,8 @@ data "aws_iam_policy_document" "assume_role" {
 resource "aws_iam_role" "api_role" {
   name               = "todo-list-lambda-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
+
+  tags = local.common_tags
 }
 
 data "aws_iam_policy_document" "dynamo_policys" {
@@ -64,6 +66,8 @@ data "aws_iam_policy_document" "dynamo_policys" {
 resource "aws_iam_policy" "iam_policy" {
   name   = "todo-list-policy"
   policy = data.aws_iam_policy_document.dynamo_policys.json
+
+  tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "attachment" {

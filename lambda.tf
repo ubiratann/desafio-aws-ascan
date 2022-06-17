@@ -19,6 +19,8 @@ resource "aws_lambda_function" "lambda" {
       "TABLE" = "todo-list"
     }
   }
+
+  tags = local.common_tags
 }
 
 resource "aws_lambda_permission" "permission" {

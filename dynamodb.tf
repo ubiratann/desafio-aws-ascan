@@ -23,5 +23,7 @@ resource "aws_dynamodb_table" "todo" {
     range_key       = "description"
     projection_type = "ALL"
   }
+
+  tags = local.common_tags
 }
 

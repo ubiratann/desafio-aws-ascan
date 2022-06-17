@@ -1,12 +1,16 @@
 resource "aws_apigatewayv2_api" "api" {
   name          = "todo"
   protocol_type = "HTTP"
+
+  tags = local.common_tags
 }
 
 resource "aws_apigatewayv2_stage" "stage" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = "$default"
   auto_deploy = true
+
+  tags = local.common_tags
 }
 
 resource "aws_apigatewayv2_integration" "integration" {

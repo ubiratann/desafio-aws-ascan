@@ -17,15 +17,11 @@ resource "aws_dynamodb_table" "todo" {
     type = "S"
   }
 
-
   global_secondary_index {
-    name               = "status_code_index"
-    hash_key           = "status_code"
-    range_key          = "description"
-    write_capacity     = 10
-    read_capacity      = 10
-    projection_type    = "INCLUDE"
-    non_key_attributes = ["id"]
+    name            = "status_code_index"
+    hash_key        = "status_code"
+    range_key       = "description"
+    projection_type = "ALL"
   }
 }
 

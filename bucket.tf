@@ -13,3 +13,8 @@ resource "aws_s3_bucket_versioning" "remote-state-versioning" {
     status = "Enabled"
   }
 }
+
+resource "aws_s3_bucket_acl" "acl" {
+  bucket = aws_s3_bucket.remote-state.id
+  acl    = "private"
+}

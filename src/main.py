@@ -1,6 +1,7 @@
 import boto3
 import os
 import json
+import uuid
 
 from boto3.dynamodb.conditions import Attr, And, Key
 from botocore.exceptions import ClientError
@@ -19,233 +20,247 @@ FUNCTION_INDEX = -2
 
 CONDITIONAL_EXCEPTION = "ConditionalCheckFailedException"
 
-#comentario
-def handler(event, context):
+def parse_body(body):
     """
-        This method will be called on the invok action of the AWS lambda function 
+        This method is a turn-around to fix the problem with Decimal not serializable elements thats becomes from dynamodb
+        Parameter
+        ---------
+        body: dict
+            object with the body of response
     """
-
-    def parse_body(body):
-        """
-            This method is a turn-around to fix the problem with Decimal not serializable elements thats becomes from dynamodb
-            Parameter
-            ---------
-            body: dict
-                object with the body of response
-        """
+    if isinstance(body, list):
+        for list_item in body:
+            list_item = parse_body(list_item)
+    else:
         for item in body:
             # recursively parsing nested dicts
-            if isinstance(item, dict):
-                item = parse_body(item);
+            if isinstance(body[item], dict):
+                body[item] = parse_body(body[item])
             #parsing Decimal objects to int
-            elif isinstance(body[item], Decimal):
+            if isinstance(body[item], Decimal):
                 body[item] = int(body[item])  
-        return body
+    return body
 
-    def create_task(item, table):
-        """
-            Create a task on default database table
-            Parameters
-            ----------
-            item : dict
-                Definition of the item to be created on database
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        try:
-            table.put_item(
-                TableName                 = DEFAULT_TABLE_NAME,
-                Item                      = {**item},
-                ConditionExpression       = Attr("id").not_exists()
-            )
-            response["status"] = HTTPStatus.CREATED
-            response["body"]   = {"message" : "Item created with sucess"}
-        except ClientError as err:
-            if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-                response["status"] = HTTPStatus.FORBIDDEN
-                response["body"]   = {"message" : f"The id={item['id']} is allready in use !"}
-        except:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = {"message" : "Something went wrong :'("}
-        return response
+def create_task(item, table):
+    """
+        Create a task on default database table
+        Parameters
+        ----------
+        item : dict
+            Definition of the item to be created on database
+        table : object
+            Reference to the default database table
+    """
+    item["id"] = uuid.uuid4().int & (1<<64)-1
+    response = {}
+    try:
+        table.put_item(
+            TableName           = DEFAULT_TABLE_NAME,
+            Item                = {**item},
+            ConditionExpression = Attr("id").not_exists(),
+        )
+        response["status"] = HTTPStatus.CREATED
+        response["body"] =  {
+                               "message": "deu bom",
+                               "item": item
+                            }
+    except ClientError as err:
+        if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
+            response["status"] = HTTPStatus.FORBIDDEN
+            response["body"]   = {"message" : f"The id={item['id']} is allready in use !"}
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
 
-    def update_task_description(id, item, table):
-        """
-            Update the description of a task
-            Parameters
-            ----------
-            id : int
-                Id of the task to be updated
-            item : object
-                Object with the new description
-            table : object
-                Reference to the default database table
-        """
-        response = {}
+def update_task_description(id, item, table):
+    """
+        Update the description of a task
+        Parameters
+        ----------
+        id : int
+            Id of the task to be updated
+        item : object
+            Object with the new description
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    try:
+        aux = table.update_item(
+            TableName                 = DEFAULT_TABLE_NAME,
+            Key                       = {"id": id},
+            ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
+            UpdateExpression          = "SET description = :description",
+            ExpressionAttributeValues = { ":description" : item["description"] },
+            ReturnValues              = "UPDATED_NEW"
+        )
+        response["status"] = HTTPStatus.OK
+        response["body"]   = {
+                                "message" : "Item description updated with sucess !",
+                                "item"    :  aux["Attributes"]
+                             }
+    except ClientError as err:
+        if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
+            response["status"] = HTTPStatus.NOT_FOUND
+            response["body"]   = {"message" : f"Invalid id={item['id']}, check it and try again!"}       
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
+
+def update_task_status(id, status_code, table):
+    """
+        Update the status of a task
+        Parameters
+        ----------
+        id : int
+            Id of the task to be updated
+        status_code : int
+            The new status code
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    messages = {
+        IN_PROGRESS : "The task is in progress !",
+        TODO        : "The task has been stoped !",
+        DONE        : "The task has ben completed !"
+    }
+    try:
+        item = table.update_item(
+            TableName                 = DEFAULT_TABLE_NAME,
+            Key                       = {"id": id},
+            UpdateExpression          = "SET status_code=:status_code",
+            ExpressionAttributeValues = {':status_code': status_code},
+            ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
+            ReturnValues              = "ALL_NEW"
+        )
+        response["body"] = {
+                              "message" : messages[status_code],
+                              "item"    : item["Attributes"]
+                           }
+        response["status"] = HTTPStatus.OK
+    except ClientError as err:
+        if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
+            response["status"] = HTTPStatus.NOT_FOUND
+            response["body"]   = {"message" : f"Invalid id={id}, check it and try again !"}
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
+
+def delete_task(id, table):
+    """
+        Delete a task
+        Parameters
+        ----------
+        id : int
+            Id of the task to be deleted
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    try:
+        table.delete_item(
+            Key                 = {"id":id},
+            ConditionExpression = Attr("id").exists()
+        )
+        response["status"] = HTTPStatus.OK
+        response["body"]   = {"message" : f"Item with id={id} deleted with sucess !"}
+    except ClientError as err:
+        if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
+            response["status"] = HTTPStatus.NOT_FOUND
+            response["body"]   = {"message" : f"Invalid id={id}, check it and try again !"}  
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
+
+def get_task(id, table):
+    """
+        Get an especific task by id from database
+        Parameters
+        ----------
+        id : int
+            Id of the task to be updated
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    if id != "":
         try:
-            aux = table.update_item(
-                TableName                 = DEFAULT_TABLE_NAME,
-                Key                       = {"id": id},
-                ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
-                UpdateExpression          = "SET description = :description",
-                ExpressionAttributeValues = { ":description" : item["description"] },
-                ReturnValues              = "UPDATED_NEW"
+            aux = table.get_item(
+                TableName = DEFAULT_TABLE_NAME,
+                Key       = {"id":id},
             )
             response["status"] = HTTPStatus.OK
-            response["body"]   = {"message" : "Item description updated with sucess !"}
-        except ClientError as err:
-            if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-                response["status"] = HTTPStatus.NOT_FOUND
-                response["body"]   = {"message" : f"Invalid id={item['id']}, check it and try again!"}       
-        except:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = {"message" : "Something went wrong :'("}
-        return response
-
-    def update_task_status(id, status_code, table):
-        """
-            Update the status of a task
-            Parameters
-            ----------
-            id : int
-                Id of the task to be updated
-            status_code : int
-                The new status code
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        messages = {
-            IN_PROGRESS : "The task is in progress !",
-            TODO        : "The task has been stoped !",
-            DONE        : "The task has ben completed !"
-        }
-        try:
-            table.update_item(
-                TableName                 = DEFAULT_TABLE_NAME,
-                Key                       = {"id": id},
-                UpdateExpression          = "SET status_code=:status_code",
-                ExpressionAttributeValues = {':status_code': status_code},
-                ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
-            )
-            response["body"]   = {"message" : messages[status_code]}
-            response["status"] = HTTPStatus.OK
-        except ClientError as err:
-            if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-                response["status"] = HTTPStatus.NOT_FOUND
-                response["body"]   = {"message" : f"Invalid id={id}, check it and try again !"}
-        except:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = {"message" : "Something went wrong :'("}
-        return response
-    def delete_task(id, table):
-        """
-            Delete a task
-            Parameters
-            ----------
-            id : int
-                Id of the task to be deleted
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        try:
-            table.delete_item(
-                Key                 = {"id":id},
-                ConditionExpression = Attr("id").exists()
-            )
-            response["status"] = HTTPStatus.OK
-            response["body"]   = {"message" : f"Item with id={id} deleted with sucess !"}
-        except ClientError as err:
-            if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-                response["status"] = HTTPStatus.NOT_FOUND
-                response["body"]   = {"message" : f"Invalid id={id}, check it and try again !"}  
-        except:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = {"message" : "Something went wrong :'("}
-        return response
-    
-    def get_task(id, table):
-        """
-            Get an especific task by id from database
-            Parameters
-            ----------
-            id : int
-                Id of the task to be updated
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        if id != "":
-            try:
-                aux = table.get_item(
-                    TableName = DEFAULT_TABLE_NAME,
-                    Key       = {"id":id},
-                )
-                response["status"] = HTTPStatus.OK
-                response["body"]   = aux["Item"] 
-            except KeyError as err:
-                response["status"] = HTTPStatus.NOT_FOUND
-                response["body"]   = { "message" : f"Theres no item with id={id}"}
-            except ClientError as err:
-                response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-                response["body"]   = { "message" : err.response['Error']['Message']}         
-            except:
-                response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-                response["body"]   = {"message" : "Something went wrong :'("}
-        else:
-            response = get_all_tasks(dynamo)
-        return response
-
-    def get_tasks_by_status(status_code, table):
-        """
-            Get all tasks that have an especific status
-            Parameters
-            ----------
-            status_code : int
-                Wanted status code of the tasks
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        try:
-            aux = table.query(
-                TableName              = DEFAULT_TABLE_NAME,
-                IndexName              = "status_code_index",
-                KeyConditionExpression = Key("status_code").eq(status_code)
-            )
-            response["status"] = HTTPStatus.OK
-            response["body"]   = aux["Items"]
+            response["body"]   = aux["Item"] 
+        except KeyError as err:
+            response["status"] = HTTPStatus.NOT_FOUND
+            response["body"]   = { "message" : f"Theres no item with id={id}"}
         except ClientError as err:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = { "message" : err.response['Error']['Message']}         
         except:
             response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
             response["body"]   = {"message" : "Something went wrong :'("}
-        return response
+    else:
+        response = get_all_tasks(table)
+    return response
 
-    def get_all_tasks(table):
-        """
-            Get all tasks
-            Parameters
-            ----------
-            table : object
-                Reference to the default database table
-        """
-        response = {}
-        try:
-            aux                = table.scan(TableName = DEFAULT_TABLE_NAME,)
-            response["status"] = HTTPStatus.OK
-            response["body"]   = aux["Items"]   
-        except ClientError as err:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = { "message" : err.response['Error']['Message']}      
-        except:
-            response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-            response["body"]   = {"message" : "Something went wrong :'("}
-        return response
+def get_tasks_by_status(status_code, table):
+    """
+        Get all tasks that have an especific status
+        Parameters
+        ----------
+        status_code : int
+            Wanted status code of the tasks
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    try:
+        aux = table.query(
+            TableName              = DEFAULT_TABLE_NAME,
+            IndexName              = "status_code_index",
+            KeyConditionExpression = Key("status_code").eq(status_code)
+        )
+        response["status"] = HTTPStatus.OK
+        response["body"]   = aux["Items"]
+    except ClientError as err:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = { "message" : err.response['Error']['Message']}         
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
 
+def get_all_tasks(table):
+    """
+        Get all tasks
+        Parameters
+        ----------
+        table : object
+            Reference to the default database table
+    """
+    response = {}
+    try:
+        aux                = table.scan(TableName = DEFAULT_TABLE_NAME,)
+        response["status"] = HTTPStatus.OK
+        response["body"]   = aux["Items"]   
+    except ClientError as err:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = { "message" : err.response['Error']['Message']}      
+    except:
+        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
+        response["body"]   = {"message" : "Something went wrong :'("}
+    return response
+
+def handler(event, context):
+    """
+        This method will be called on the invok action of the AWS lambda function 
+    """
     #dynamo reference
     dynamo = boto3.resource("dynamodb").Table(DEFAULT_TABLE_NAME)
     
@@ -294,7 +309,7 @@ def handler(event, context):
     }
 
     if method in METHODS:
-        response = None 
+        response = {} 
         if method == "DELETE":
             response = delete_task(id, dynamo)
 
@@ -311,7 +326,7 @@ def handler(event, context):
         if method == "PUT":
             func     = splited_path[FUNCTION_INDEX]
             response = PUT_FUNCTIONS[func]["function"](*PUT_FUNCTIONS[func]["values"], dynamo)
-
+        
         response["body"] = parse_body(response["body"])
         return {
             "statusCode": response["status"],

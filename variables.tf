@@ -7,3 +7,8 @@ variable "account_id" {
   type    = string
   default = "050485243139"
 }
+
+variable "table_name" {
+  type    = string
+  default = "todo-app"
+}

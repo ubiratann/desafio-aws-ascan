@@ -1,4 +1,4 @@
-data "aws_iam_policy_document" "assume_role" {
+data "aws_iam_policy_document" "assume-role" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -8,14 +8,14 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-resource "aws_iam_role" "api_role" {
-  name               = "todo-list-lambda-role"
+resource "aws_iam_role" "todo-app-role" {
+  name               = "todo-app-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 
   tags = local.common_tags
 }
 
-data "aws_iam_policy_document" "dynamo_policys" {
+data "aws_iam_policy_document" "todo-app-policy" {
 
   statement {
     sid       = "AllowCreatingLogGroups"
@@ -38,8 +38,8 @@ data "aws_iam_policy_document" "dynamo_policys" {
   statement {
     effect = "Allow"
     resources = [
-      "arn:aws:dynamodb:${var.region}:*:table/todo-list",
-      "arn:aws:dynamodb:${var.region}:*:table/todo-list/index/*"
+      "arn:aws:dynamodb:${var.region}:*:table/${var.table_name}",
+      "arn:aws:dynamodb:${var.region}:*:table/${var.table_name}/index/*"
     ]
     actions = [
       "dynamodb:PutItem",
@@ -64,8 +64,8 @@ data "aws_iam_policy_document" "dynamo_policys" {
 }
 
 resource "aws_iam_policy" "iam_policy" {
-  name   = "todo-list-policy"
-  policy = data.aws_iam_policy_document.dynamo_policys.json
+  name   = "todo-app-policy"
+  policy = data.aws_iam_policy_document.todo-app-policy.json
 
   tags = local.common_tags
 }

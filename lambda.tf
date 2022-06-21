@@ -9,14 +9,14 @@ data "archive_file" "artifact" {
 resource "aws_lambda_function" "lambda" {
 
   filename      = data.archive_file.artifact.output_path
-  function_name = "todo-list"
+  function_name = "todo-app-lambda"
   handler       = "main.handler"
   runtime       = "python3.8"
   role          = aws_iam_role.api_role.arn
 
   environment {
     variables = {
-      "TABLE" = "todo-list"
+      "TABLE" = var.table_name
     }
   }
 

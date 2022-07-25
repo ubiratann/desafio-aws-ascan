@@ -1,6 +1,8 @@
 resource "aws_dynamodb_table" "todo-app-table" {
   billing_mode = "PAY_PER_REQUEST"
   name         = var.table_name
+  hash_key     = "id"
+
 
   attribute {
     name = "id"

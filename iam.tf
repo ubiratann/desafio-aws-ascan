@@ -10,7 +10,7 @@ data "aws_iam_policy_document" "assume-role" {
 
 resource "aws_iam_role" "todo-app-role" {
   name               = "todo-app-role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.assume-role.json
 
   tags = local.common_tags
 }
@@ -72,5 +72,5 @@ resource "aws_iam_policy" "iam_policy" {
 
 resource "aws_iam_role_policy_attachment" "attachment" {
   policy_arn = aws_iam_policy.iam_policy.arn
-  role       = aws_iam_role.api_role.name
+  role       = aws_iam_role.todo-app-role.name
 }

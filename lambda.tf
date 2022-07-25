@@ -12,7 +12,7 @@ resource "aws_lambda_function" "lambda" {
   function_name = "todo-app-lambda"
   handler       = "main.handler"
   runtime       = "python3.8"
-  role          = aws_iam_role.api_role.arn
+  role          = aws_iam_role.todo-app-role.arn
 
   environment {
     variables = {

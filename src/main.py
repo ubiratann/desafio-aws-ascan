@@ -55,9 +55,9 @@ def create_task(item, table):
         table : object
             Reference to the default database table
     """
-    item["id"]         = uuid.uuid4().int & (1<<64)-1
-    item["status_code"]     = TODO
-    item["created_at"] = now()
+    item["id"]          = uuid.uuid4().int & (1<<64)-1
+    item["status_code"] = TODO
+    item["created_at"]  = now()
     response = {}
     try:
         table.put_item(
@@ -77,45 +77,9 @@ def create_task(item, table):
     except:
         response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
         response["body"]   = {"message" : "Something went wrong :'("}
+        
     return response
 
-def update_task_description(id, item, table):
-    """
-        Update the description of a task
-        Parameters
-        ----------
-        id : int
-            Id of the task to be updated
-        item : object
-            Object with the new description
-        table : object
-            Reference to the default database table
-    """
-    response = {}
-    try:
-        aux = table.update_item(
-            TableName                 = DEFAULT_TABLE_NAME,
-            Key                       = {"id": id},
-            ConditionExpression       = And(Attr("id").exists(), Attr("id").eq(id)),
-            UpdateExpression          = "SET description =:description, updated_at =:updated_at",
-            ExpressionAttributeValues = { 
-                                            ":description" : item["description"],
-                                            ":updated_at"  : now() },
-            ReturnValues              = "UPDATED_NEW"
-        )
-        response["status"] = HTTPStatus.OK
-        response["body"]   = {
-                                "message" : "Task description updated with sucess !",
-                                "item"    :  aux["Attributes"]
-                             }
-    except ClientError as err:
-        if err.response["Error"]["Code"] == CONDITIONAL_EXCEPTION:
-            response["status"] = HTTPStatus.NOT_FOUND
-            response["body"]   = {"message" : f"Invalid id={item['id']}, check it and try again!"}       
-    except:
-        response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
-        response["body"]   = {"message" : "Something went wrong :'("}
-    return response
 
 def update_task_status(id, status_code, table):
     """
@@ -159,6 +123,7 @@ def update_task_status(id, status_code, table):
     except:
         response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
         response["body"]   = {"message" : "Something went wrong :'("}
+
     return response
 
 def delete_task(id, table):
@@ -186,6 +151,7 @@ def delete_task(id, table):
     except:
         response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
         response["body"]   = {"message" : "Something went wrong :'("}
+
     return response
 
 def get_task(id, table):
@@ -218,6 +184,7 @@ def get_task(id, table):
             response["body"]   = {"message" : "Something went wrong :'("}
     else:
         response = get_all_tasks(table)
+
     return response
 
 def get_tasks_by_status(status_code, table):
@@ -245,6 +212,7 @@ def get_tasks_by_status(status_code, table):
     except:
         response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
         response["body"]   = {"message" : "Something went wrong :'("}
+
     return response
 
 def get_all_tasks(table):
@@ -266,6 +234,7 @@ def get_all_tasks(table):
     except:
         response["status"] = HTTPStatus.INTERNAL_SERVER_ERROR
         response["body"]   = {"message" : "Something went wrong :'("}
+
     return response
 
 def handler(event, context):
@@ -312,10 +281,6 @@ def handler(event, context):
         "finish": {
             "function": update_task_status,
             "values": (id, DONE)
-        },
-        "update": {
-            "function": update_task_description,
-            "values": (code, body)
         }
     }
 
